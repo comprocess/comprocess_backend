@@ -3,9 +3,7 @@ from .models import User
 
 def get_tokens_for_user(user):
     """사용자를 위한 JWT 토큰 생성"""
-    refresh = RefreshToken()
-    refresh['user_id'] = user.id
-    refresh['username'] = user.username
+    refresh = RefreshToken.for_user(user)
     
     return {
         'refresh': str(refresh),

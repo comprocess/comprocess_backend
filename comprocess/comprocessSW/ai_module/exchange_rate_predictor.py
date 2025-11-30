@@ -10,7 +10,7 @@ import joblib
 from typing import Literal
 
 
-# Attention 레이어 정의 (ai_develop.py와 동일)
+
 @register_keras_serializable(package="Custom")
 class Attention(layers.Layer):
     def __init__(self, **kwargs):
@@ -45,13 +45,12 @@ class ExchangeRatePredictor:
     
     def __init__(self):
         """모델 및 스케일러 로드"""
-        # 모델 파일 경로
+        
         model_dir = Path(__file__).parent / "model"
-        model_path = model_dir / "lstm_usd_model.h5"  # .h5 파일 사용
+        model_path = model_dir / "lstm_usd_model.h5" 
         scaler_x_path = model_dir / "scaler_X.joblib"
         scaler_y_path = model_dir / "scaler_y.joblib"
         
-        # 파일 존재 확인
         if not model_path.exists():
             raise FileNotFoundError(f"모델 파일을 찾을 수 없습니다: {model_path}")
         if not scaler_x_path.exists():
@@ -59,14 +58,12 @@ class ExchangeRatePredictor:
         if not scaler_y_path.exists():
             raise FileNotFoundError(f"스케일러 Y 파일을 찾을 수 없습니다: {scaler_y_path}")
         
-        # 모델 로드 (compile=False로 컴파일 정보 무시)
         self.model = keras.models.load_model(
             model_path,
             custom_objects={'Attention': Attention},
             compile=False
         )
         
-        # 모델 컴파일 (추론만 할 것이므로 간단하게)
         self.model.compile(optimizer='adam', loss='mse', metrics=['mae'])
         
         self.scaler_X = joblib.load(scaler_x_path)
@@ -74,14 +71,14 @@ class ExchangeRatePredictor:
         
         # 기본 환율 데이터 (2025년 10월 기준)
         self.base_data = self._initialize_base_data()
-        self.lookback = 24  # ai_develop.py와 동일
+        self.lookback = 24  
     
     def _initialize_base_data(self):
         """
         기본 환율 데이터 초기화
         CSV 파일 없이도 작동하도록 최근 데이터를 하드코딩
         """
-        # 2023-10 ~ 2025-10 (25개월 데이터, dropna 후 24개월)
+
         dates = pd.date_range(start='2023-10-01', end='2025-10-01', freq='MS')
         
         # 실제 환율 데이터 (대략적인 값)
@@ -131,7 +128,6 @@ class ExchangeRatePredictor:
             예측 결과 딕셔너리
         """
         try:
-            # 입력 검증
             if country not in ["미국", "일본"]:
                 return {
                     "success": False,
@@ -144,15 +140,15 @@ class ExchangeRatePredictor:
                     "error": "월은 1부터 12 사이의 값이어야 합니다."
                 }
             
-            # 예측 날짜 생성
+
             target_date = pd.Timestamp(year=year, month=month, day=1)
             
-            # 최근 데이터 날짜
+
             latest_date = self.base_data.index[-1]
             
-            # 예측 가능 범위 확인 (과거 데이터는 예측 불가)
+
             if target_date <= latest_date:
-                # 과거 데이터는 실제 값 반환
+
                 if target_date in self.base_data.index:
                     actual_usd = float(self.base_data.loc[target_date, "USD"])
                     actual_jpy = float(self.base_data.loc[target_date, "JPY100"])
@@ -173,7 +169,7 @@ class ExchangeRatePredictor:
                         "error": f"{year}년 {month}월 데이터가 존재하지 않습니다."
                     }
             
-            # 미래 예측
+   
             months_ahead = (target_date.year - latest_date.year) * 12 + (target_date.month - latest_date.month)
             
             if months_ahead > 12:
@@ -182,18 +178,17 @@ class ExchangeRatePredictor:
                     "error": f"현재는 최대 12개월 후({latest_date.year}년 {latest_date.month}월 기준)까지만 예측 가능합니다."
                 }
             
-            # 반복 예측 (1개월씩 앞으로 예측)
+    
             current_df = self.base_data.copy()
             
             for i in range(months_ahead):
-                # 최근 24개월 데이터 추출
+          
                 recent_data = current_df[["USD_ret", "JPY_ret"]].iloc[-self.lookback:]
-                
-                # 스케일링
+         
                 scaled_input = self.scaler_X.transform(recent_data.values)
                 X_pred = scaled_input.reshape(1, self.lookback, 2)
                 
-                # 예측 (USD 수익률)
+    
                 pred_scaled = self.model.predict(X_pred, verbose=0)
                 pred_return = self.scaler_y.inverse_transform(pred_scaled)[0, 0]
                 

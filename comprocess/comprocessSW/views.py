@@ -306,42 +306,28 @@ class UserMeView(APIView):
     )
     def get(self, request):
         # JWT 토큰에서 user_id 추출
+        user = request.user
+        
+        # 디버그 정보 수집
         auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-        
-        if not auth_header:
-            return Response({
-                "error": "Authorization 헤더가 필요합니다."
-            }, status=status.HTTP_401_UNAUTHORIZED)
-        
-        # "Bearer " 접두사가 있으면 제거, 없으면 그대로 사용
-        if auth_header.startswith('Bearer '):
-            token = auth_header.split(' ')[1]
-        else:
-            token = auth_header
-        
-        try:
-            jwt_auth = JWTAuthentication()
-            validated_token = jwt_auth.get_validated_token(token)
-            user_id = validated_token.get('user_id')
-            
-            if not user_id:
-                return Response({
-                    "error": "토큰에 사용자 정보가 없습니다."
-                }, status=status.HTTP_401_UNAUTHORIZED)
-                
-        except Exception as e:
-            return Response({
-                "error": f"인증 정보가 유효하지 않습니다: {str(e)}"
-            }, status=status.HTTP_401_UNAUTHORIZED)
-        
-        try:
-            user = User.objects.get(id=user_id)
-            serializer = UserDetailSerializer(user)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except User.DoesNotExist:
-            return Response({
-                "error": "사용자를 찾을 수 없습니다."
-            }, status=status.HTTP_404_NOT_FOUND)
+        print(f"[DEBUG] Authorization header: {auth_header[:50] if auth_header else 'None'}...")
+        print(f"[DEBUG] request.user: {user}")
+        print(f"[DEBUG] request.auth: {request.auth}")
+
+        if user is None or not getattr(user, "is_authenticated", False):
+            return Response(
+                {
+                    "error": "인증 정보가 없거나 유효하지 않습니다.",
+                    "debug_user": str(user),
+                    "debug_user_type": str(type(user)),
+                    "debug_is_authenticated": str(getattr(user, "is_authenticated", "N/A")),
+                    "debug_auth": str(request.auth),
+                },
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        serializer = UserDetailSerializer(user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class UserDetailView(APIView):
@@ -528,29 +514,10 @@ class TravelScheduleAI(APIView):
         serializer = TravelScheduleCreateSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # 인증된 사용자라면 해당 사용자와 일정 연결
+        user = request.user if getattr(request.user, "is_authenticated", False) else None
 
-        # JWT 토큰에서 사용자 자동 추출 (선택적)
-        user = None
-        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-        
-        if auth_header:
-            # "Bearer " 접두사가 있으면 제거, 없으면 그대로 사용
-            if auth_header.startswith('Bearer '):
-                token = auth_header.split(' ')[1]
-            else:
-                token = auth_header
-            
-            try:
-                jwt_auth = JWTAuthentication()
-                validated_token = jwt_auth.get_validated_token(token)
-                user_id = validated_token.get('user_id')
-                if user_id:
-                    try:
-                        user = User.objects.get(id=user_id)
-                    except User.DoesNotExist:
-                        pass
-            except Exception:
-                pass
+        schedule_obj = serializer.save(user=user)
         
         schedule_obj = serializer.save(user=user)
 
@@ -703,40 +670,14 @@ class MyTravelHistoryView(APIView):
         tags=["Travel Planning"]
     )
     def get(self, request):
-        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-        
-        if not auth_header:
-            return Response({
-                "error": "Authorization 헤더가 필요합니다."
-            }, status=status.HTTP_401_UNAUTHORIZED)
-        
-        # "Bearer " 접두사가 있으면 제거, 없으면 그대로 사용
-        if auth_header.startswith('Bearer '):
-            token = auth_header.split(' ')[1]
-        else:
-            token = auth_header
-        
-        try:
-            jwt_auth = JWTAuthentication()
-            validated_token = jwt_auth.get_validated_token(token)
-            user_id = validated_token.get('user_id')
-            
-            if not user_id:
-                return Response({
-                    "error": "토큰에 사용자 정보가 없습니다."
-                }, status=status.HTTP_401_UNAUTHORIZED)
-        except Exception as e:
-            return Response({
-                "error": f"인증 정보가 유효하지 않습니다: {str(e)}"
-            }, status=status.HTTP_401_UNAUTHORIZED)
-        
-        try:
-            user = User.objects.get(id=user_id)
-        except User.DoesNotExist:
-            return Response({
-                "error": "사용자를 찾을 수 없습니다."
-            }, status=status.HTTP_404_NOT_FOUND)
-        
+        user = request.user
+
+        if user is None or not getattr(user, "is_authenticated", False):
+            return Response(
+                {"error": "인증 정보가 없거나 유효하지 않습니다."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
         schedules = Travel_Schedule.objects.filter(user=user).order_by('-created_at')
         serializer = TravelScheduleDetailSerializer(schedules, many=True)
         
